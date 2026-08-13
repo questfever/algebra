@@ -116,6 +116,23 @@ impl<T: CanonicalSerialize, const N: usize> CanonicalSerialize for [T; N] {
 }
 impl_valid_seq!([T; N]; const N: usize);
 
+struct ArrayGuard<'a, T> {
+    data: &'a mut [core::mem::MaybeUninit<T>],
+    initialized: usize,
+}
+
+impl<T> Drop for ArrayGuard<'_, T> {
+    #[allow(unsafe_code)]
+    fn drop(&mut self) {
+        for elem in &mut self.data[..self.initialized] {
+            // SAFETY: `initialized` is incremented only after an element is initialized.
+            unsafe {
+                elem.assume_init_drop();
+            }
+        }
+    }
+}
+
 impl<T: CanonicalDeserialize, const N: usize> CanonicalDeserialize for [T; N] {
     #[inline]
     #[allow(unsafe_code)]
@@ -126,9 +143,15 @@ impl<T: CanonicalDeserialize, const N: usize> CanonicalDeserialize for [T; N] {
     ) -> Result<Self, SerializationError> {
         use core::mem::MaybeUninit;
         let mut data: [MaybeUninit<T>; N] = [const { MaybeUninit::uninit() }; N];
-        for elem in &mut data[..] {
+        let mut guard = ArrayGuard {
+            data: &mut data,
+            initialized: 0,
+        };
+        for elem in guard.data.iter_mut() {
             elem.write(T::deserialize_with_mode(&mut reader, compress, validate)?);
+            guard.initialized += 1;
         }
+        core::mem::forget(guard);
         Ok(data.map(|x| unsafe { x.assume_init() }))
     }
 }
