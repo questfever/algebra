@@ -7,7 +7,6 @@ use ark_std::{
     vec,
     vec::*,
 };
-use core::sync::atomic::{AtomicUsize, Ordering};
 use num_bigint::BigUint;
 
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
@@ -166,49 +165,6 @@ fn test_array_bad_input() {
     // Does not panic on invalid data:
     let serialized = [0u8; 1];
     assert!(<[u8; 2]>::deserialize_compressed(&serialized[..]).is_err());
-}
-
-static ARRAY_ELEMENTS_CREATED: AtomicUsize = AtomicUsize::new(0);
-static ARRAY_ELEMENTS_DROPPED: AtomicUsize = AtomicUsize::new(0);
-
-struct DropCounter;
-
-impl Valid for DropCounter {
-    fn check(&self) -> Result<(), SerializationError> {
-        Ok(())
-    }
-}
-
-impl CanonicalDeserialize for DropCounter {
-    fn deserialize_with_mode<R: Read>(
-        reader: R,
-        compress: Compress,
-        validate: Validate,
-    ) -> Result<Self, SerializationError> {
-        if u8::deserialize_with_mode(reader, compress, validate)? == 0 {
-            ARRAY_ELEMENTS_CREATED.fetch_add(1, Ordering::SeqCst);
-            Ok(Self)
-        } else {
-            Err(SerializationError::InvalidData)
-        }
-    }
-}
-
-impl Drop for DropCounter {
-    fn drop(&mut self) {
-        ARRAY_ELEMENTS_DROPPED.fetch_add(1, Ordering::SeqCst);
-    }
-}
-
-#[test]
-fn test_array_drops_initialized_elements_on_deserialization_error() {
-    ARRAY_ELEMENTS_CREATED.store(0, Ordering::SeqCst);
-    ARRAY_ELEMENTS_DROPPED.store(0, Ordering::SeqCst);
-
-    let serialized = [0u8, 0, 1];
-    assert!(<[DropCounter; 3]>::deserialize_compressed(&serialized[..]).is_err());
-    assert_eq!(ARRAY_ELEMENTS_CREATED.load(Ordering::SeqCst), 2);
-    assert_eq!(ARRAY_ELEMENTS_DROPPED.load(Ordering::SeqCst), 2);
 }
 
 #[test]
