@@ -123,7 +123,11 @@ impl<T: CanonicalDeserialize, const N: usize> CanonicalDeserialize for [T; N] {
         compress: Compress,
         validate: Validate,
     ) -> Result<Self, SerializationError> {
-        core::array::try_from_fn(|_| T::deserialize_with_mode(&mut reader, compress, validate))
+        (0..N)
+            .map(|_| T::deserialize_with_mode(&mut reader, compress, validate))
+            .collect::<Result<Vec<_>, _>>()?
+            .try_into()
+            .map_err(|_| SerializationError::InvalidData)
     }
 }
 
